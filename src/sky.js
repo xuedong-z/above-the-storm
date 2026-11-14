@@ -123,7 +123,8 @@ void main(){
     float tEnd = min((-b + sq) / (2.0 * a), 650.0);
     float cB = uCam.y - BOT, discB = b * b - 4.0 * a * cB;
     if (discB > 0.0) tEnd = min(tEnd, 2.0 * cB / (-b + sqrt(discB)));
-    float j = hash12(gl_FragCoord.xy + uSeed * 17.13);
+    // interleaved gradient noise, shifted by the golden ratio every frame: averages out over a few frames
+    float j = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))) + uSeed * 0.61803399);
     t += max(0.10, t * uStepK) * j;
     for (int i = 0; i < uSteps; i++){
       if (t > tEnd || T < 0.012) break;

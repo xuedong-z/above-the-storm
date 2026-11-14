@@ -30,6 +30,9 @@ const post = new Post(renderer, W, H);
 const cloudRT = post.rt(W * CLOUD_SCALE, H * CLOUD_SCALE);
 const hdrRT = post.rt(W, H);
 const accumRT = SPP > 1 ? post.rt(W, H) : null;
+// live playback has one sample per frame: average the cloud layer over the last few frames instead
+const TEMPORAL = SPP === 1 && !Q.has('raw');
+let hist = TEMPORAL ? [post.rt(W * CLOUD_SCALE, H * CLOUD_SCALE), post.rt(W * CLOUD_SCALE, H * CLOUD_SCALE)] : null, histOK = false;
 
 const sky = makeSkyMaterial(makeNoise3D(96));
 const su = sky.uniforms;
@@ -62,7 +65,14 @@ function renderHDR(t, seed, jx, jy) {
     else su.uFlashP.value[i].set(0, 0, 0, 0);
   }
   post.pass(sky, cloudRT);
-  post.blit(cloudRT.texture, hdrRT);
+  let clouds = cloudRT;
+  if (TEMPORAL) {
+    const k = histOK ? 0.28 : 1;
+    post.blit(cloudRT.texture, hist[1], k);
+    if (histOK) post.blit(hist[0].texture, hist[1], 1 - k, true);
+    hist.reverse(); histOK = true; clouds = hist[0];
+  }
+  post.blit(clouds.texture, hdrRT);
   cam.setViewOffset(W, H, -jx, jy, W, H);          // same sub-pixel jitter for the geometry
   tle.userData.update(t, cam.position, pix);
   renderer.setRenderTarget(hdrRT);
@@ -88,6 +98,7 @@ function renderFrame(t) {
   }
 }
 post.final.uniforms.uExposure.value = +(Q.get('ev') || 1.0);
+post.final.uniforms.uGrain.value = HQ ? 0.014 : 0.005;
 post.final.uniforms.uBloom.value = +(Q.get('bloom') || 0.55);
 window.__seek = t => { renderFrame(t); return t; };
 
@@ -138,15 +149,16 @@ function live() {
     if (ms > 40 && level < LEVELS.length - 1 && !Q.has('cs')) {
       const [cs, steps, k] = LEVELS[++level];
       CLOUD_SCALE = cs; cloudRT.setSize(Math.round(W * cs), Math.round(H * cs));
+      if (hist) { hist.forEach(h => h.setSize(cloudRT.width, cloudRT.height)); histOK = false; }
       su.uSteps.value = steps; su.uStepK.value = k;
     }
   };
-  let last = -1;
+  let last = -1, settle = 0;
   const tick = () => {
     if (HOLD === null) adapt();
     let t = HOLD !== null ? HOLD : (performance.now() - t0) / 1000;
     if (t >= DUR) { t0 = performance.now(); t = 0; restartAudio(); }
-    if (HOLD === null || last !== HOLD) renderFrame(t);
+    if (HOLD === null || last !== HOLD || settle++ < 24) renderFrame(t);
     last = t;
     requestAnimationFrame(tick);
   };

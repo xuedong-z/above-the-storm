@@ -27,7 +27,7 @@ const COPY = /* glsl */`
 uniform sampler2D tex; uniform float uW; varying vec2 vUv;
 void main(){ gl_FragColor = vec4(texture2D(tex, vUv).rgb * uW, 1.0); }`;
 const FINAL = /* glsl */`
-uniform sampler2D tex, bloom; uniform float uExposure, uBloom, uSeed; uniform vec2 uRes; varying vec2 vUv;
+uniform sampler2D tex, bloom; uniform float uExposure, uBloom, uSeed, uGrain; uniform vec2 uRes; varying vec2 vUv;
 vec3 aces(vec3 x){ return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
 float hash(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * .1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
 void main(){
@@ -36,7 +36,7 @@ void main(){
   c *= 1.0 - 0.55 * dot(q, q);
   c = aces(c * uExposure);
   c = pow(c, vec3(1.0 / 2.2));
-  c += (hash(gl_FragCoord.xy + uSeed * 91.7) - 0.5) * 0.022;
+  c += (hash(gl_FragCoord.xy + uSeed * 91.7) - 0.5) * uGrain;
   gl_FragColor = vec4(c, 1.0);
 }`;
 
@@ -60,7 +60,7 @@ export class Post {
     this.add = mat(COPY, { tex: { value: null }, uW: { value: 1 } },
       { blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor, transparent: true });
     this.final = mat(FINAL, { tex: { value: null }, bloom: { value: null }, uExposure: { value: 1 }, uBloom: { value: 0.5 },
-      uSeed: { value: 0 }, uRes: { value: new THREE.Vector2(w, h) } });
+      uSeed: { value: 0 }, uGrain: { value: 0.016 }, uRes: { value: new THREE.Vector2(w, h) } });
   }
   pass(material, target, clear = true) {
     this.quad.material = material;
