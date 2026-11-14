@@ -3,12 +3,16 @@
 A film shot written entirely in code. No models, no textures, no audio files: every pixel and
 every sound is computed by the source in this repository, on top of three.js.
 
-The subject is real but almost never seen: **transient luminous events** above a night
-thunderstorm, viewed from 21 km. A giant lightning stroke under a distant anvil launches an
-expanding **elve** ring, then a cluster of **red sprites** (50–90 km altitude, slowed down
-about 300×), and a **blue jet** leaves the top of a nearer cell.
+One continuous 30-second shot at night, all of it real phenomena that are almost never seen:
 
-This is a 10-second sample shot, not the full film.
+1. a fast weave between the overshooting tops of a line of thunderstorms, 15 km up;
+2. **transient luminous events** above a distant anvil: an **elve**, a cluster of **red sprites**
+   (slowed down about 300×), and a **blue jet** leaving the top of a nearer cell;
+3. a roll inverted and a dive straight down through the main updraft, lightning channels
+   crossing the path;
+4. breaking out under the cloud base over the plains, and a low run along a wet highway toward
+   a **tornado** lit by lightning and by the **power flashes** of the lines it tears down, while
+   the town behind it goes dark block by block.
 
 ## Run
 
@@ -16,13 +20,15 @@ This is a 10-second sample shot, not the full film.
 node tools/server.mjs
 ```
 
-Open <http://localhost:5179>. It plays in real time and loops; click for sound.
+Open <http://localhost:5179>. It plays in real time and loops; click for sound. Any static
+file host works too (the repository root is the site).
 
 | URL | What it does |
 | --- | --- |
 | `/` | live playback, 1280×720, half-resolution clouds |
-| `/?t=4.0` | hold one moment (look-dev) |
-| `/?t=4.0&hq` | the same moment at export quality |
+| `/?start=18` | start playback at 18 s |
+| `/?t=23.0` | hold one moment (look-dev) |
+| `/?t=23.0&hq` | the same moment at export quality |
 | `/?capture` | render all frames offline and encode `out/above-the-storm.mp4` |
 | `/?capture&w=3840&h=2160&spp=4` | 4K export with more sub-frames |
 
@@ -33,9 +39,10 @@ so the export is deterministic and independent of machine speed.
 
 | File | Role |
 | --- | --- |
-| `src/timeline.js` | the shot as functions of time: camera, storm cells, lightning schedule |
+| `src/timeline.js` | the film as functions of time: camera path, storm cells, lightning, lamps |
 | `src/noise.js` | tiling Perlin-Worley 3D noise volume, generated at load |
-| `src/sky.js` | ray-marched volumetric cloud deck on a curved earth, stars, airglow, limb |
+| `src/world.js` | one ray-march for everything solid or cloudy: sky, anvil and updraft, cloud base, tornado, rain, procedural plains, sphere-traced poles and farmsteads |
+| `src/lights.js` | lightning channels, street lamps and headlights, rain streaks (additive geometry) |
 | `src/sprites.js` | sprites, halo, elve and jet as branching additive ribbons with per-vertex arrival times |
 | `src/post.js` | HDR bloom pyramid, ACES tone map, grain |
 | `src/audio.js` | synthesised soundtrack (`OfflineAudioContext`), shared by playback and export |

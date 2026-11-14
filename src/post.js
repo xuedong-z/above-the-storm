@@ -1,6 +1,6 @@
 // HDR post chain: mip-pyramid bloom, ACES tone map, grain, vignette.
 import * as THREE from 'three';
-import { FS_VERT } from './sky.js';
+import { FS_VERT } from './world.js';
 
 const mat = (frag, uniforms, extra = {}) => new THREE.ShaderMaterial({
   vertexShader: FS_VERT, fragmentShader: frag, uniforms, depthTest: false, depthWrite: false, ...extra });
