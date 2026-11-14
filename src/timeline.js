@@ -209,7 +209,9 @@ export const LAMPS = [];
   LAMPS.push([ELEVATOR.x, 0.047, ELEVATOR.z, 0.004, 1.2, 1, 0.08, 0.05, 99, 1]);                             // red obstruction lights
   LAMPS.push([TOWN.x + 0.3, 0.12, TOWN.z - 0.5, 0.004, 1.5, 1, 0.08, 0.05, 99, 1]);
   LAMPS.push([ELEVATOR.x + 0.02, 0.01, ELEVATOR.z + 0.02, 0.005, 1.2, ...SOD, 28.9, 0]);
-  for (let k = 0; k < 60; k++) {                                                                          // scattered farmsteads to the horizon
+  for (let i = 0; i < 6; i++) for (let k = 0; k < 7; k++)                                                  // wind farm: synchronised red beacons
+    LAMPS.push([-5.5 - 0.9 * i + 0.3 * r(), 0.09, -84 - 1.1 * k + 0.4 * r(), 0.004, 1.5, 1, 0.08, 0.05, 99, 1]);
+  for (let k = 0; k < 170; k++) {                                                                          // scattered farmsteads to the horizon
     const x = (r() - 0.5) * 36, z = -84 + (r() - 0.5) * 36;
     if (Math.hypot(x, z + 82) < 1.2) continue;
     LAMPS.push([x, 0.008, z, 0.005, 1.2, ...(r() < 0.5 ? MV : SOD), 99, 0]);

@@ -222,7 +222,13 @@ vec3 groundAlb(vec2 x, float fw, out float wet){
   // patchiness
   float m = textureLod(uNoise, vec3(x * 0.37, 0.1), 0.0).r, m2 = textureLod(uNoise, vec3(x * 6.1, 0.6), 0.0).g;
   alb *= 0.62 + 0.55 * m + 0.35 * (m2 - 0.5) * smoothstep(0.02, 0.002, fw);
-  wet = 0.10;
+  // standing water in the low spots, stretched along the furrows
+  float pud = smoothstep(0.72, 0.80, textureLod(uNoise, vec3((x * mix(vec2(1.0), vec2(0.25), dir)) * 16.0, 0.8), 0.0).r * 0.70 + m * 0.30 + (m2 - 0.5) * 0.06);
+  alb *= 1.0 - 0.45 * pud;
+  wet = mix(0.05, 0.7, pud);
+  // grassy field margins
+  vec2 gm = abs(fract(g + 0.5) - 0.5) * 0.805;
+  alb = mix(vec3(0.030, 0.046, 0.020) * (0.6 + 0.8 * m2), alb, smoothstep(0.004, 0.004 + fw + 0.002, min(gm.x, gm.y)));
   // section roads (gravel)
   vec2 gr = abs(fract(x / 1.61 + 0.5) - 0.5) * 1.61;
   float dr = min(gr.x, gr.y);
@@ -240,6 +246,7 @@ vec3 groundAlb(vec2 x, float fw, out float wet){
   asph = mix(asph, vec3(0.40, 0.40, 0.38), smoothstep(lw, 0.0, abs(dx - 0.0037)) * la);
   alb = mix(alb, asph, road);
   wet = mix(wet, 1.0, road);
+  wet = mix(wet, 0.10, verge * (1.0 - smoothstep(0.0078 + fw, 0.0078, dx)));
   return alb;
 }
 
@@ -251,6 +258,24 @@ float gable(vec3 p, vec3 b, float rise){          // box with a pitched roof, ri
   float roof = max(max(abs(p.x) * rise / b.x + (p.y - 2.0 * b.y) - rise, abs(p.z) - b.z), -(p.y - 2.0 * b.y)) * 0.8;
   return min(body, roof);
 }
+// a shelterbelt along the local x axis on every line z = k * 805 m; hw = distance from the highway
+float belt0(vec3 p, float seed, float hw){
+  float zl = floor(p.z / 0.805 + 0.5), dz = p.z - zl * 0.805;
+  float gx = p.x / 0.805, xc = floor(gx);
+  float dEdge = min(gx - xc, 1.0 - gx + xc) * 0.805;
+  float far = 0.42 - abs(dz);
+  if (hash12(vec2(xc, zl) + seed) < 0.42) return min(dEdge + 0.006, far);
+  if (hw < 0.04) return min(0.047 - hw, far);
+  if (abs(dz) > 0.03 || p.y > 0.03) return max(abs(dz) - 0.016, p.y - 0.019);
+  float tx = floor(p.x / 0.011), h = hash12(vec2(tx, zl * 3.1 + seed));
+  vec3 R = vec3(0.0052, 0.0050 + 0.0050 * h, 0.0052);
+  vec3 q = vec3(p.x - (tx + 0.5) * 0.011, p.y - R.y * 0.95, dz + (h - 0.5) * 0.007);
+  float e = (length(q / R) - 1.0) * 0.0048;
+  if (e < 0.004) e += (textureLod(uNoise, p * 240.0, 0.0).r - 0.5) * 0.0034;
+  e = min(e, max(length(q.xz) - 0.0003, p.y - R.y));                 // trunk
+  return e * 0.75;
+}
+float belt(vec3 p, float seed, float hw){ return max(belt0(p, seed, hw), (p.y - 0.019) * 0.9); }
 // returns distance; mat: 1 pole, 2 house, 3 barn, 4 tree, 5 concrete/steel
 float map(vec3 p, out float mat){
   mat = 1.0;
@@ -287,6 +312,12 @@ float map(vec3 p, out float mat){
       if (e < d){ d = e; mat = 4.0; }
     }
   }
+  // fence along both sides of the highway right-of-way: posts every 5 m
+  vec3 q3 = vec3(abs(p.x) - 0.021, p.y, mod(p.z, 0.005) - 0.0025);
+  d = min(d, max(length(q3.xz) - 0.00007, p.y - 0.0013));
+  // shelterbelts
+  float e2 = min(belt(p, 3.3, abs(p.x)), belt(vec3(p.z, p.y, p.x - 0.4025), 9.1, 1.0));
+  if (e2 < d){ d = e2; mat = 4.0; }
   // grain elevator
   vec3 l = p - vec3(uElev.x, 0.0, uElev.y);
   float bd = length(l.xz) - 0.06;
@@ -325,8 +356,8 @@ void main(){
   // near objects
   float tO = -1.0, mat = 0.0;
   if (uCam.y < 1.6){
-    float t = 0.0005, tmax = tG > 0.0 ? min(tG, 3.0) : 3.0, m;
-    for (int i = 0; i < 72; i++){
+    float t = 0.0005, tmax = tG > 0.0 ? min(tG, 4.0) : 4.0, m;
+    for (int i = 0; i < 100; i++){
       float d = map(uCam + rd * t, m);
       if (d < 0.35 * uPix * t){ tO = t; mat = m; break; }
       t += d * 0.9;
@@ -337,7 +368,7 @@ void main(){
   if (tO > 0.0){
     vec3 P = uCam + rd * tO; float m;
     vec2 e = vec2(max(0.00003, 0.6 * uPix * tO), 0.0);
-    vec3 N = normalize(vec3(map(P + e.xyy, m) - map(P - e.xyy, m), map(P + e.yxy, m) - map(P - e.yxy, m), map(P + e.yyx, m) - map(P - e.yyx, m)));
+    vec3 N = normalize(vec3(map(P + e.xyy, m) - map(P - e.xyy, m), map(P + e.yxy, m) - map(P - e.yxy, m), map(P + e.yyx, m) - map(P - e.yyx, m)) + 1e-12);
     vec3 alb = mat < 1.5 ? vec3(0.055, 0.045, 0.035) : mat < 2.5 ? vec3(0.42, 0.40, 0.36) : mat < 3.5 ? vec3(0.17, 0.045, 0.035)
              : mat < 4.5 ? vec3(0.020, 0.036, 0.016) : vec3(0.30, 0.30, 0.29);
     if (mat > 3.5 && mat < 4.5) N = normalize(N + 0.6 * (textureLod(uNoise, P * 700.0, 0.0).rgr - 0.5));
@@ -351,6 +382,7 @@ void main(){
     vec3 E = lightAt(G, vec3(0.0, 1.0, 0.0));
     // moonlight outside the storm's shadow
     E += MOON * 0.24 * smoothstep(26.0, 40.0, length(P.xz - uMain.xy));
+    E += AMBLOW * 1.2;
     bg = alb * E;
     // wet reflections of the lightning
     vec3 nn = normalize(vec3(0.0, 1.0, 0.0) + 0.05 * (textureLod(uNoise, vec3(P.xz * 40.0, 0.3), 0.0).rgr - 0.5) * vec3(1.0, 0.0, 1.0));
@@ -363,7 +395,19 @@ void main(){
       vec3 v = fp.xyz - G; float d2 = dot(v, v);
       sp += uFlashC[f].rgb * fp.w * pow(max(dot(R, v) * inversesqrt(d2), 0.0), 40.0) * 3.0 / (d2 + uFlashC[f].a);
     }
-    bg += sp * fres * wet;
+    // the clear slot under the anvil, mirrored in the water
+    sp += vec3(0.016, 0.032, 0.070) * 0.22 * exp(-max(R.y, 0.0) * 18.0);
+    // lamps and headlights smeared into long streaks toward the viewer
+    vec3 st = vec3(0.0);
+    for (int i = 0; i < ${MAX_LAMP}; i++){
+      vec4 lp = uLampP[i];
+      if (lp.w <= 0.0) continue;
+      vec3 M = vec3(lp.x, -lp.y, lp.z) - uCam; float dm = length(M); M /= dm;
+      vec3 dl = rd - M;
+      float sh = dot(dl, normalize(vec3(M.z, 0.0, -M.x))), sv = dl.y;
+      st += uLampC[i] * lp.w * exp(-sh * sh / 0.00005 - sv * sv / (sv > 0.0 ? 0.0004 : 0.006)) * 0.05 / (dm + 0.05);
+    }
+    bg += sp * fres * wet + st * 0.5 * wet;
     tEnd = min(tEnd, tG);
   }
 
