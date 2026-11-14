@@ -1,7 +1,18 @@
-// The soundtrack is synthesised too: slipstream, thunder, the roar inside the updraft, rain,
+// The soundtrack is synthesised too: an orchestral-synth score, slipstream, thunder, the roar inside the updraft, rain,
 // the tornado's rumble, arcing power lines. Rendered offline into one buffer.
-import { DUR, FLASHES, BOLTS, POWER, T_PARENT, T_SPRITE, T_JET, T_ENTER, T_EXIT, T_END, camera } from './timeline.js';
+import { DUR, POWER, T_PARENT, T_SPRITE, T_JET, T_ENTER, T_EXIT, T_END, camera } from './timeline.js';
 import { rng } from './noise.js';
+import { renderScore } from './score.js';
+
+const synth = SR => new Promise(res => {
+  const local = () => res(renderScore(SR));
+  try {
+    const w = new Worker(new URL('./synth-worker.js', import.meta.url), { type: 'module' });
+    w.onmessage = e => { res([e.data.L, e.data.R]); w.terminate(); };
+    w.onerror = () => { w.terminate(); local(); };
+    w.postMessage({ SR });
+  } catch (e) { local(); }
+});
 
 export async function renderAudio() {
   const SR = 48000;
@@ -10,6 +21,8 @@ export async function renderAudio() {
   const nb = ctx.createBuffer(2, SR * 4, SR);
   for (let ch = 0; ch < 2; ch++) { const d = nb.getChannelData(ch); for (let i = 0; i < d.length; i++) d[i] = r() * 2 - 1; }
   const noise = (off = 0) => { const s = ctx.createBufferSource(); s.buffer = nb; s.loop = true; s.start(0, off); return s; };
+  const burst = (t, dur) => { const s = ctx.createBufferSource(); s.buffer = nb; s.loop = true; const a = Math.max(0, t); s.start(a, r() * 3); s.stop(Math.min(DUR, a + dur)); return s; };
+  const osc = (t, dur, type = 'sine') => { const o = ctx.createOscillator(); o.type = type; const a = Math.max(0, t); o.start(a); o.stop(Math.min(DUR, a + dur)); return o; };
   const master = ctx.createGain();
   master.gain.setValueAtTime(0, 0); master.gain.linearRampToValueAtTime(0.9, 0.5);
   master.gain.setValueAtTime(0.9, T_END - 0.02); master.gain.linearRampToValueAtTime(0, T_END + 0.03);
@@ -46,36 +59,15 @@ export async function renderAudio() {
     keys(g.gain, [[0, 0], [T_EXIT, 0], [22, a * 0.25], [T_END, a]]); o.connect(g).connect(master); o.start();
   }
   // drone above the clouds
-  for (const [fr, a] of [[49, 0.09], [73.5, 0.045], [98.3, 0.02]]) {
+  for (const [fr, a] of [[36.7, 0.09], [73.4, 0.04], [110, 0.015]]) {
     const o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.value = fr;
     keys(g.gain, [[0, a], [T_ENTER - 1, a], [T_ENTER, 0], [T_END, 0]]); o.connect(g).connect(master); o.start();
   }
-  // thunder: rumble per flash, softened and (slightly) delayed with distance from the camera
-  const visible = new Set(BOLTS.map(b => b.flash)), power = new Set(POWER);
-  for (const f of FLASHES) {
-    if (f.t < -0.5 || f.t > DUR || power.has(f)) continue;
-    const c = camera(Math.max(0, f.t)).pos;
-    const dist = Math.hypot(f.x - c[0], f.y - c[1], f.z - c[2]);
-    const near = visible.has(f);
-    const t0 = f.t + Math.min(1.2, dist * 0.05);
-    const peak = near ? Math.min(0.9, 2.2 / (1 + dist * 0.35)) : Math.min(0.4, f.I / 420) * (25 / (25 + dist));
-    if (peak < 0.004) continue;
-    const pan = ctx.createStereoPanner(); pan.pan.value = Math.max(-1, Math.min(1, (f.x - c[0]) / (4 + dist * 0.5)));
-    pan.connect(master);
-    { const n = noise(r() * 3), lp = bq('lowpass', 60 + 5000 / (8 + dist * 3)), g = ctx.createGain();
-      env(g, t0, peak, 0.04, 1.2 + r() + (near ? 1.0 : 0)); n.connect(lp).connect(g).connect(pan); }
-    if (near) {                                           // the crack of a close channel
-      const n = noise(r() * 3), hp = bq('highpass', 900), g = ctx.createGain();
-      env(g, t0, peak * 0.8, 0.004, 0.22); n.connect(hp).connect(g).connect(pan);
-      const o = ctx.createOscillator(), g2 = ctx.createGain(); o.frequency.setValueAtTime(70, t0); o.frequency.exponentialRampToValueAtTime(28, t0 + 1.2);
-      env(g2, t0, peak * 0.9, 0.01, 1.6); o.connect(g2).connect(master); o.start();
-    }
-  }
   // power flashes: arcing buzz
   for (const f of POWER) {
-    const o = ctx.createOscillator(), bp = bq('bandpass', 1400, 1.2), g = ctx.createGain(), pan = ctx.createStereoPanner(); pan.pan.value = 0.35;
-    o.type = 'sawtooth'; o.frequency.setValueAtTime(118, f.t); o.frequency.linearRampToValueAtTime(92, f.t + 0.5);
-    env(g, f.t + 0.05, 0.16, 0.01, 0.5); o.connect(bp).connect(g).connect(pan).connect(master); o.start();
+    const o = osc(f.t, 0.8, 'sawtooth'), bp = bq('bandpass', 1400, 1.2), g = ctx.createGain(), pan = ctx.createStereoPanner(); pan.pan.value = 0.35;
+    o.frequency.setValueAtTime(118, f.t); o.frequency.linearRampToValueAtTime(92, f.t + 0.5);
+    env(g, f.t + 0.05, 0.16, 0.01, 0.5); o.connect(bp).connect(g).connect(pan).connect(master);
   }
   // parent stroke of the sprites: sub boom
   { const o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.setValueAtTime(58, T_PARENT); o.frequency.exponentialRampToValueAtTime(30, T_PARENT + 2.5);
@@ -89,14 +81,24 @@ export async function renderAudio() {
     g.gain.value = 0.6; o.connect(g).connect(g2).connect(pan).connect(master); o.start(); trem.start();
   });
   // blue jet: rising hiss
-  { const n = noise(2.1), f = bq('bandpass', 300, 2.5), g = ctx.createGain(), pan = ctx.createStereoPanner(); pan.pan.value = 0.5;
+  { const n = burst(T_JET, 3.4), f = bq('bandpass', 300, 2.5), g = ctx.createGain(), pan = ctx.createStereoPanner(); pan.pan.value = 0.5;
     f.frequency.setValueAtTime(240, T_JET); f.frequency.exponentialRampToValueAtTime(2600, T_JET + 2.2);
     env(g, T_JET, 0.16, 0.7, 2.4); n.connect(f).connect(g).connect(pan).connect(master); }
   // the roll into the dive: a falling whoosh
-  { const n = noise(0.4), f = bq('bandpass', 2400, 1.5), g = ctx.createGain();
+  { const n = burst(10.6, 2.7), f = bq('bandpass', 2400, 1.5), g = ctx.createGain();
     f.frequency.setValueAtTime(2600, 10.6); f.frequency.exponentialRampToValueAtTime(260, T_ENTER + 0.3);
     env(g, 10.6, 0.22, 1.5, 0.9); n.connect(f).connect(g).connect(master); }
+  // ---- score and thunder (see score.js): computed in a worker, mixed in as one buffer ---------
+  {
+    const ts = performance.now();
+    const [ML, MR] = await synth(SR);
+    ctx.tScore = performance.now() - ts;
+    const mb = ctx.createBuffer(2, ML.length, SR); mb.copyToChannel(ML, 0); mb.copyToChannel(MR, 1);
+    const ms = ctx.createBufferSource(); ms.buffer = mb; ms.connect(master); ms.start(0);
+  }
+  const tr = performance.now();
   const buf = await ctx.startRendering();
+  buf.timing = { score: Math.round(ctx.tScore), render: Math.round(performance.now() - tr) };
   let pk = 0;
   for (let c = 0; c < 2; c++) { const d = buf.getChannelData(c); for (let i = 0; i < d.length; i++) pk = Math.max(pk, Math.abs(d[i])); }
   if (pk > 0.9) for (let c = 0; c < 2; c++) { const d = buf.getChannelData(c); for (let i = 0; i < d.length; i++) d[i] *= 0.9 / pk; }

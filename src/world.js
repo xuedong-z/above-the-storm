@@ -47,7 +47,7 @@ mat2 rot(float a){ float c = cos(a), s = sin(a); return mat2(c, -s, s, c); }
 float baseH(vec2 xz){
   float n = textureLod(uNoise, vec3(xz * 0.045, 0.37), 0.0).r;
   float b = 1.02 + 0.36 * n;
-  b -= 0.46 * smoothstep(1.7, 0.2, length(xz - uTor.xy)) * uTor.z;      // wall cloud
+  b -= (0.46 * smoothstep(1.7, 0.2, length(xz - uTor.xy)) + 0.22 * smoothstep(0.55, 0.1, length(xz - uTor.xy))) * uTor.z;      // wall cloud
   return b;
 }
 
@@ -109,17 +109,29 @@ float density(vec3 p, float h, float lod, bool detail){
 }
 
 // tornado: x = extinction, y = debris fraction.  ph = (x, altitude, z)
+// A smooth, sharp-edged condensation funnel (narrow at the ground, flaring into the wall cloud),
+// spinning, with helical streaks, and a ragged cloud of dirt whirling around its foot.
+vec3 gTorN;
 vec2 tornado(vec3 ph){
-  vec2 ax = uTor.xy + vec2(0.13, -0.05) * ph.y * ph.y + 0.010 * vec2(sin(ph.y * 9.0 + uTime * 1.3), cos(ph.y * 7.0 + uTime * 1.1));
+  float y = ph.y;
+  if (y > 1.4) return vec2(0.0);
+  vec2 ax = uTor.xy + vec2(0.10, -0.04) * y * y + vec2(0.035, 0.02) * sin(y * 3.2 + uTime * 0.5) * smoothstep(0.0, 0.5, y)
+          + 0.005 * vec2(sin(y * 11.0 + uTime * 2.3), cos(y * 9.0 + uTime * 1.9));
   vec2 l = ph.xz - ax; float rr = length(l);
-  if (rr > 0.9 || ph.y > 1.3) return vec2(0.0);
-  float R = 0.034 + 0.34 * pow(clamp(ph.y / 0.80, 0.0, 1.0), 2.3);
-  l = rot(uTime * 1.1) * l;
-  vec3 q = vec3(l.x, ph.y - uTime * 0.12, l.y);
-  float n = textureLod(uNoise, q * 3.7, 0.0).r, n2 = textureLod(uNoise, q * 12.0 + 0.4, 0.0).g;
-  float f = smoothstep(R, R * 0.6, rr + (n - 0.5) * R * 0.8 + (n2 - 0.5) * 0.016);
-  float deb = smoothstep(0.30, 0.03, rr + (n - 0.5) * 0.16) * smoothstep(0.26, 0.0, ph.y + (n2 - 0.5) * 0.10) * n;
-  return vec2(f * 60.0 + deb * 20.0, deb * 20.0 / (f * 60.0 + deb * 20.0 + 1e-4)) * vec2(uTor.z, 1.0);
+  if (rr > 0.7) return vec2(0.0);
+  gTorN = vec3(l.x, 0.0, l.y) / max(rr, 1e-4);
+  float R = 0.028 + 0.075 * pow(y, 1.3) + 0.16 * pow(smoothstep(0.35, 1.2, y), 2.0);
+  vec2 lr = rot(uTime * 1.9 + y * 5.0) * l;
+  vec3 q = vec3(lr.x, y * 0.35 - uTime * 0.05, lr.y);
+  float n = textureLod(uNoise, q * 9.0, 0.0).r, n2 = textureLod(uNoise, q * 31.0 + 0.4, 0.0).g;
+  float f = smoothstep(R, R * 0.80, rr + (n - 0.5) * R * 0.38 + (n2 - 0.5) * 0.012) * smoothstep(1.4, 1.0, y);
+  vec2 ld = rot(uTime * 2.6) * (ph.xz - uTor.xy); float rd0 = length(ld);
+  vec3 qd = vec3(ld.x, y - uTime * 0.2, ld.y);
+  float nd = textureLod(uNoise, qd * 7.0, 0.0).r, nd2 = textureLod(uNoise, qd * 23.0, 0.0).g;
+  float deb = smoothstep(0.23, 0.04, rd0 + (nd - 0.5) * 0.16) * smoothstep(0.21, 0.0, y + (nd - 0.5) * 0.14)
+            * smoothstep(0.22, 0.62, nd * 0.6 + nd2 * 0.5);
+  float ext = f * 150.0 + deb * 45.0;
+  return vec2(ext * uTor.z, deb * 45.0 / (ext + 1e-4));
 }
 
 // haze and rain below the cloud base
@@ -223,7 +235,7 @@ vec3 groundAlb(vec2 x, float fw, out float wet){
   float m = textureLod(uNoise, vec3(x * 0.37, 0.1), 0.0).r, m2 = textureLod(uNoise, vec3(x * 6.1, 0.6), 0.0).g;
   alb *= 0.62 + 0.55 * m + 0.35 * (m2 - 0.5) * smoothstep(0.02, 0.002, fw);
   // standing water in the low spots, stretched along the furrows
-  float pud = smoothstep(0.72, 0.80, textureLod(uNoise, vec3((x * mix(vec2(1.0), vec2(0.25), dir)) * 16.0, 0.8), 0.0).r * 0.70 + m * 0.30 + (m2 - 0.5) * 0.06);
+  float pud = smoothstep(0.72, 0.80, textureLod(uNoise, vec3((x * mix(vec2(1.0), vec2(0.25), dir)) * 16.0, 0.8), 0.0).r * 0.70 + m * 0.30 + (m2 - 0.5) * 0.06 + (textureLod(uNoise, vec3(x * 47.0, 0.35), 0.0).b - 0.5) * 0.10 * smoothstep(0.01, 0.002, fw));
   alb *= 1.0 - 0.45 * pud;
   wet = mix(0.05, 0.7, pud);
   // grassy field margins
@@ -244,9 +256,14 @@ vec3 groundAlb(vec2 x, float fw, out float wet){
   float dash = step(fract(x.y / 0.012), 0.30);
   asph = mix(asph, vec3(0.42, 0.33, 0.07), smoothstep(lw, 0.0, dx) * dash * la);
   asph = mix(asph, vec3(0.40, 0.40, 0.38), smoothstep(lw, 0.0, abs(dx - 0.0037)) * la);
+  asph *= 1.0 - 0.22 * exp(-pow((abs(dx - 0.00185) - 0.0009) / 0.00035, 2.0));              // worn wheel tracks
+  asph *= 0.80 + 0.45 * textureLod(uNoise, vec3(x * vec2(260.0, 22.0), 0.7), 0.0).r;       // patches and seams
   alb = mix(alb, asph, road);
+  float ditch = smoothstep(0.0011 + fw, 0.0003, abs(dx - 0.0150)) * smoothstep(0.35, 0.5, textureLod(uNoise, vec3(x.y * 2.3, x.x * 9.0, 0.2), 0.0).g);
+  alb *= 1.0 - 0.5 * ditch;
   wet = mix(wet, 1.0, road);
   wet = mix(wet, 0.10, verge * (1.0 - smoothstep(0.0078 + fw, 0.0078, dx)));
+  wet = mix(wet, 0.95, ditch);
   return alb;
 }
 
@@ -264,18 +281,18 @@ float belt0(vec3 p, float seed, float hw){
   float gx = p.x / 0.805, xc = floor(gx);
   float dEdge = min(gx - xc, 1.0 - gx + xc) * 0.805;
   float far = 0.42 - abs(dz);
-  if (hash12(vec2(xc, zl) + seed) < 0.42) return min(dEdge + 0.006, far);
+  if (hash12(vec2(xc, zl) + seed) < 0.24) return min(dEdge + 0.006, far);
   if (hw < 0.04) return min(0.047 - hw, far);
-  if (abs(dz) > 0.03 || p.y > 0.03) return max(abs(dz) - 0.016, p.y - 0.019);
+  if (abs(dz) > 0.03 || p.y > 0.04) return max(abs(dz) - 0.016, p.y - 0.027);
   float tx = floor(p.x / 0.011), h = hash12(vec2(tx, zl * 3.1 + seed));
-  vec3 R = vec3(0.0052, 0.0050 + 0.0050 * h, 0.0052);
+  vec3 R = vec3(0.0052, 0.0055 + 0.0075 * h, 0.0052);
   vec3 q = vec3(p.x - (tx + 0.5) * 0.011, p.y - R.y * 0.95, dz + (h - 0.5) * 0.007);
   float e = (length(q / R) - 1.0) * 0.0048;
   if (e < 0.004) e += (textureLod(uNoise, p * 240.0, 0.0).r - 0.5) * 0.0034;
   e = min(e, max(length(q.xz) - 0.0003, p.y - R.y));                 // trunk
   return e * 0.75;
 }
-float belt(vec3 p, float seed, float hw){ return max(belt0(p, seed, hw), (p.y - 0.019) * 0.9); }
+float belt(vec3 p, float seed, float hw){ return max(belt0(p, seed, hw), (p.y - 0.027) * 0.9); }
 // returns distance; mat: 1 pole, 2 house, 3 barn, 4 tree, 5 concrete/steel
 float map(vec3 p, out float mat){
   mat = 1.0;
@@ -315,6 +332,11 @@ float map(vec3 p, out float mat){
   // fence along both sides of the highway right-of-way: posts every 5 m
   vec3 q3 = vec3(abs(p.x) - 0.021, p.y, mod(p.z, 0.005) - 0.0025);
   d = min(d, max(length(q3.xz) - 0.00007, p.y - 0.0013));
+  // road signs on the west shoulder every 400 m
+  vec3 q4 = vec3(p.x + 0.0105, p.y, mod(p.z + 0.2, 0.4) - 0.2);
+  d = min(d, max(length(q4.xz) - 0.00006, p.y - 0.0032));
+  float sg = sdBox(q4 - vec3(0.0, 0.0030, 0.0), vec3(0.0011, 0.0006, 0.00003));
+  if (sg < d){ d = sg; mat = 6.0; }
   // shelterbelts
   float e2 = min(belt(p, 3.3, abs(p.x)), belt(vec3(p.z, p.y, p.x - 0.4025), 9.1, 1.0));
   if (e2 < d){ d = e2; mat = 4.0; }
@@ -370,7 +392,7 @@ void main(){
     vec2 e = vec2(max(0.00003, 0.6 * uPix * tO), 0.0);
     vec3 N = normalize(vec3(map(P + e.xyy, m) - map(P - e.xyy, m), map(P + e.yxy, m) - map(P - e.yxy, m), map(P + e.yyx, m) - map(P - e.yyx, m)) + 1e-12);
     vec3 alb = mat < 1.5 ? vec3(0.055, 0.045, 0.035) : mat < 2.5 ? vec3(0.42, 0.40, 0.36) : mat < 3.5 ? vec3(0.17, 0.045, 0.035)
-             : mat < 4.5 ? vec3(0.020, 0.036, 0.016) : vec3(0.30, 0.30, 0.29);
+             : mat < 4.5 ? vec3(0.020, 0.036, 0.016) : mat < 5.5 ? vec3(0.30, 0.30, 0.29) : vec3(0.06, 0.42, 0.20);
     if (mat > 3.5 && mat < 4.5) N = normalize(N + 0.6 * (textureLod(uNoise, P * 700.0, 0.0).rgr - 0.5));
     bg = alb * lightAt(P, N);
     tEnd = min(tEnd, tO);
@@ -379,7 +401,9 @@ void main(){
     float fw = tG * uPix / max(-b, 0.02), wet;
     vec3 alb = groundAlb(P.xz, fw, wet);
     vec3 G = vec3(P.x, 0.0, P.z);
-    vec3 E = lightAt(G, vec3(0.0, 1.0, 0.0));
+    vec3 rl = textureLod(uNoise, vec3(P.xz * 1.9, 0.4), 0.0).rgb - 0.5;                      // swells and hollows, shading only
+    vec3 rf = (textureLod(uNoise, vec3(P.xz * 85.0, 0.9), 0.0).rgb - 0.5) * smoothstep(0.004, 0.0005, fw);
+    vec3 E = lightAt(G, normalize(vec3(rl.x * 0.45 + rf.x * 0.6, 1.0, rl.y * 0.45 + rf.z * 0.6)));
     // moonlight outside the storm's shadow
     E += MOON * 0.24 * smoothstep(26.0, 40.0, length(P.xz - uMain.xy));
     E += AMBLOW * 1.2;
@@ -411,6 +435,12 @@ void main(){
     tEnd = min(tEnd, tG);
   }
 
+  // rays that cross the tornado's column take short steps there, so its edge stays crisp
+  float tcA = 1e9, tcB = -1e9;
+  if (uTor.z > 0.0 && uCam.y < 3.0){
+    vec2 o = uCam.xz - uTor.xy; float A = dot(rd.xz, rd.xz), B = dot(o, rd.xz), D = B * B - A * (dot(o, o) - 0.42 * 0.42);
+    if (D > 0.0 && A > 1e-8){ float sq = sqrt(D); tcA = (-B - sq) / A; tcB = (-B + sq) / A; }
+  }
   float T = 1.0; vec3 L = vec3(0.0);
   if (march){
     float j = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))) + uSeed * 0.61803399);
@@ -420,14 +450,15 @@ void main(){
       float dt = min(max(uMinStep, t * uStepK), max(tEnd - t, 0.002));
       vec3 p = uCam + rd * t;
       float h = uCam.y + t * b + a * t * t;
+      if (t + dt > tcA && t < tcB && h < 1.5) dt = min(dt, max(max(0.010, t * uPix * 2.5), tcA - t));
       vec3 ph = vec3(p.x, h, p.z);
       float lod = clamp(log2(t * uPix * 9.0), 0.0, 5.0);
       float d = density(p, h, lod, true);
-      float da = 0.0, alb = 1.0;
+      float da = 0.0, alb = 1.0, tf = 0.0;
       if (h < 2.6){
         da = air(ph);
         vec2 tor = tornado(ph);
-        if (tor.x > 0.0){ alb = mix(1.0, mix(0.50, 0.22, tor.y), tor.x / (tor.x + d + 1e-4)); d += tor.x; }
+        if (tor.x > 0.0){ tf = tor.x / (tor.x + d + 1e-4); alb = mix(1.0, mix(0.60, 0.16, tor.y), tf); d += tor.x; }
       }
       float dTot = d + da;
       if (dTot > 0.0){
@@ -442,6 +473,11 @@ void main(){
           S = MOON * (exp(-od * 0.9) + 0.25 * exp(-od * 0.18)) + AMB * smoothstep(BOT, TOP, h);
         } else S = AMBLOW * (0.35 + 0.65 * smoothstep(2.0, 0.0, h));
         S += flashScatter(ph) + vec3(0.008, 0.011, 0.018) * uGlow;     // eyes adapted to the dark inside the cloud
+        if (tf > 0.0){                                     // the funnel reads as a solid: shade it by which side faces the light
+          float k = 0.80 + 0.30 * gTorN.x;
+          if (uFlashP[0].w > 0.0){ vec2 fl = uFlashP[0].xz - ph.xz; k *= clamp(0.65 + 0.75 * dot(gTorN.xz, fl * inversesqrt(dot(fl, fl) + 1e-6)), 0.2, 1.5); }
+          S *= mix(1.0, k, tf);
+        }
         S *= (d * alb + da * 0.3) / dTot;
         float st = exp(-dTot * dt);
         L += T * (1.0 - st) * mix(HAZE, S, exp(-t * 0.0045));

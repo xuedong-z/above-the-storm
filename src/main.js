@@ -182,10 +182,13 @@ function live() {
     src = audioCtx.createBufferSource(); src.buffer = buf; src.connect(audioCtx.destination); src.start();
   };
   msg.textContent = HOLD === null ? 'click for sound' : `t = ${HOLD}`;
+  // the soundtrack is rendered in the background as soon as the page opens, so a click starts it at once
+  const audioReady = HOLD === null ? renderAudio() : null;
   addEventListener('click', async () => {
-    if (audioCtx) return;
+    if (audioCtx || !audioReady) return;
     audioCtx = new AudioContext({ sampleRate: 48000 });
-    buf = await renderAudio(); t0 = performance.now(); restartAudio(); msg.textContent = '';
+    msg.textContent = 'preparing sound';
+    buf = await audioReady; t0 = performance.now(); restartAudio(); msg.textContent = '';
   });
   // adaptive quality: if the machine can't hold ~30 fps, march fewer steps at lower resolution
   const LEVELS = [[0.5, 190, 0.028], [0.42, 140, 0.038], [0.34, 100, 0.052], [0.25, 72, 0.07]];

@@ -2,7 +2,7 @@
 // World units are kilometres, time is seconds. The camera starts above the anvil heading -Z,
 // weaves between overshooting tops, looks up at the sprites, rolls over, dives through the
 // main updraft, breaks out under the cloud base and runs along a highway toward a tornado.
-import { rng } from './noise.js';
+import { rng } from './rng.js';
 
 export const DUR = 30, FPS = 30;
 
