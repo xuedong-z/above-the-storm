@@ -1,0 +1,8 @@
+{
+  "name": "above-the-storm",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A code-only film shot: sprites, elves and blue jets above a night thunderstorm. three.js, no assets.",
+  "scripts": { "start": "node tools/server.mjs" }
+}
