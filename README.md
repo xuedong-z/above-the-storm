@@ -3,7 +3,7 @@
 A film shot written entirely in code. No models, no textures, no audio files: every pixel and
 every sound is computed by the source in this repository, on top of three.js.
 
-One continuous 30-second shot at night, all of it real phenomena that are almost never seen:
+One continuous 33-second shot at night, all of it real phenomena that are almost never seen:
 
 1. a fast weave between the overshooting tops of a line of thunderstorms, 15 km up;
 2. **transient luminous events** above a distant anvil: an **elve**, a cluster of **red sprites**
