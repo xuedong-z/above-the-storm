@@ -7,9 +7,8 @@ import { makeNoise3D } from './noise.js';
 import { makeWorldMaterial, MAX_FLASH, MAX_LAMP } from './world.js';
 import { makeTLE } from './sprites.js';
 import { makeLights } from './lights.js';
-import { makeGirlMaterial } from './girl.js';
 import { Post } from './post.js';
-import { DUR, FPS, CELLS, MAIN_CELL, RAIN, ELEVATOR, FARMS, TOWN, LAMPS, CARS, GIRL, carPos, camera, look, tornado, activeFlashes } from './timeline.js';
+import { DUR, FPS, CELLS, MAIN_CELL, RAIN, ELEVATOR, FARMS, TOWN, LAMPS, CARS, carPos, camera, look, tornado, activeFlashes } from './timeline.js';
 import { renderAudio, wavBlob } from './audio.js';
 
 const Q = new URLSearchParams(location.search);
@@ -48,7 +47,6 @@ su.uRain.value.set(RAIN.x, RAIN.z, RAIN.r);
 su.uElev.value.set(ELEVATOR.x, ELEVATOR.z);
 su.uStepK.value = HQ ? 0.014 : 0.028;
 
-const girl = makeGirlMaterial(), gu = girl.uniforms, CHR = Q.has('chr');
 const cam = new THREE.PerspectiveCamera(50, W / H, 0.0005, 4000);
 const tleScene = new THREE.Scene();
 const tle = makeTLE();
@@ -128,30 +126,6 @@ function renderHDR(t, seed, jx, jy) {
   renderer.setRenderTarget(hdrRT);
   renderer.render(tleScene, cam);
   cam.clearViewOffset();
-  // the figure on the road: drawn at full resolution over everything else (she is the nearest thing in the shot)
-  const gd = Math.hypot(GIRL.x - c.pos[0], GIRL.z - c.pos[2]);
-  if (CHR || (c.pos[1] < 0.2 && gd < 0.9 && c.pos[2] > GIRL.z)) {
-    gu.uRel.value.set(GIRL.x - c.pos[0], -c.pos[1], GIRL.z - c.pos[2]);
-    gu.uRight.value.copy(_r); gu.uUp.value.copy(_u); gu.uFwd.value.copy(_f);
-    gu.uRes.value.set(W, H); gu.uJit.value.set(jx * 2, jy * 2); gu.uTanY.value = tanY; gu.uTime.value = t; gu.uDebug.value = CHR ? +(Q.get('chr') || 0.95) : 0; if (CHR) gu.uDbgC.value.set(+(Q.get('cx') || 0.3), +(Q.get('cy') || 0.86));
-    // light arriving at her: lightning as a rim from its own side, the town as a warm rim, the rest as fill
-    const E = [0, 0, 0]; let best = 0, kd = [0.6, 0.8], kc = [0, 0, 0];
-    for (const a of fl) {
-      const dx = a.f.x - GIRL.x, dy = a.f.y - 0.001, dz = a.f.z - GIRL.z, d2 = dx * dx + dy * dy + dz * dz;
-      const k = a.I * 0.32 * Math.exp(-Math.sqrt(d2) * 0.05) * (a.f.y > 2 ? 0.1 : 1) / (d2 + a.f.soft);
-      for (let i = 0; i < 3; i++) E[i] += a.f.col[i] * k;
-      if (k > best) { best = k; const h = Math.hypot(dx, dz) || 1, l = Math.hypot(dx / h, 0.55) ; kd = [dx / h / l, 0.55 / l]; kc = a.f.col.map(v => v * k); }
-    }
-    const town = 0.55 * lk.lamps * on / tot;
-    if (CHR) { E[0] = 0.02; E[1] = 0.024; E[2] = 0.03; kc = [0.05, 0.06, 0.08]; }
-    const fill = v => 0.30 * v / (1 + 14 * v);                 // a flash behind her mostly lights her edges, not her back
-    gu.uAmb.value.set(0.020 + fill(E[0]), 0.023 + fill(E[1]), 0.030 + fill(E[2]));
-    gu.uKeyD.value.set(kd[0], kd[1]);
-    const rim = v => 1.6 * v / (1 + 2.5 * v);
-    gu.uKeyC.value.set(0.010 + rim(kc[0]), 0.013 + rim(kc[1]), 0.020 + rim(kc[2]));
-    gu.uWarmC.value.set(0.012 + 0.12 * town, 0.007 + 0.065 * town, 0.003 + 0.025 * town);
-    post.pass(girl, hdrRT, false);
-  }
 }
 
 let frameNo = 0;
